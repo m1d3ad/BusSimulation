@@ -2,21 +2,38 @@
 using System.Collections.Generic;
 using System.Linq;
 
-// 1. Клас пасажира
-public class Passenger
+// ===================================================================
+// 1. ІНКАПСУЛЯЦІЯ ТА НАСЛІДУВАННЯ: Базовий абстрактний клас Пасажира
+// ===================================================================
+public abstract class Passenger
 {
-    public string Name { get; }
-    public string Category { get; } 
-    public bool HasPaid { get; private set; }
-    public Ticket? CurrentTicket { get; private set; } 
+    private string _name = string.Empty;
 
-    public Passenger(string name, string category = "Звичайний")
+    public string Name
+    {
+        get => _name;
+        protected set
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                _name = "Невідомий пасажир";
+            else
+                _name = value.Trim();
+        }
+    }
+
+    public bool HasPaid { get; private set; }
+    public Ticket? CurrentTicket { get; private set; }
+
+    protected Passenger(string name)
     {
         Name = name;
-        Category = category;
         HasPaid = false;
         CurrentTicket = null;
     }
+
+    // ПОЛІМОРФІЗМ: Абстрактні методи
+    public abstract decimal CalculateFare(decimal baseFare);
+    public abstract string GetCategoryName();
 
     public void Pay(Ticket ticket)
     {
@@ -24,16 +41,49 @@ public class Passenger
         HasPaid = true;
     }
 
-    public void DisplayInfo()
+    public virtual void DisplayInfo()
     {
         string status = (HasPaid && CurrentTicket != null) 
             ? $"Оплачено ({CurrentTicket.Price:F2} грн)" 
             : "Не оплачено";
-        Console.WriteLine($"[Пасажир] {Name} | Категорія: {Category} | Статус: {status}");
+        Console.WriteLine($"[Пасажир] {Name} | Категорія: {GetCategoryName()} | Статус: {status}");
     }
 }
 
-// 2. Клас квитка
+// ===================================================================
+// 2. НАСЛІДУВАННЯ ТА ПОЛІМОРФІЗМ: Класи-нащадки
+// ===================================================================
+
+// 1 - Звичайний пасажир (100% вартості)
+public class StandardPassenger : Passenger
+{
+    public StandardPassenger(string name) : base(name) { }
+
+    public override decimal CalculateFare(decimal baseFare) => baseFare;
+    public override string GetCategoryName() => "Звичайний";
+}
+
+// 2 - Студент (-50% вартості)
+public class StudentPassenger : Passenger
+{
+    public StudentPassenger(string name) : base(name) { }
+
+    public override decimal CalculateFare(decimal baseFare) => baseFare * 0.5m;
+    public override string GetCategoryName() => "Студентський (-50%)";
+}
+
+// 3 - Пільговик / Пенсіонер (Безкоштовно)
+public class SeniorPassenger : Passenger
+{
+    public SeniorPassenger(string name) : base(name) { }
+
+    public override decimal CalculateFare(decimal baseFare) => 0m;
+    public override string GetCategoryName() => "Пільговий (безкоштовно)";
+}
+
+// ===================================================================
+// 3. ІНКАПСУЛЯЦІЯ: Клас квитка
+// ===================================================================
 public class Ticket
 {
     public string PassengerName { get; }
@@ -44,7 +94,7 @@ public class Ticket
     public Ticket(string passengerName, decimal price, string tariffType)
     {
         PassengerName = passengerName;
-        Price = price;
+        Price = price < 0 ? 0 : price;
         TariffType = tariffType;
         IssuedAt = DateTime.Now;
     }
@@ -55,71 +105,58 @@ public class Ticket
     }
 }
 
-// 3. Клас зупинки
+// ===================================================================
+// 4. ІНКАПСУЛЯЦІЯ: Клас зупинки
+// ===================================================================
 public class BusStop
 {
     public string Name { get; }
-    public Queue<Passenger> WaitingQueue { get; } = new();
+    private readonly Queue<Passenger> _waitingQueue = new();
 
     public BusStop(string name)
     {
-        Name = name;
+        Name = string.IsNullOrWhiteSpace(name) ? "Невідома зупинка" : name.Trim();
     }
 
     public void AddPassenger(Passenger passenger)
     {
-        WaitingQueue.Enqueue(passenger);
+        _waitingQueue.Enqueue(passenger);
     }
 
-    public bool HasPassengers => WaitingQueue.Count > 0;
+    public bool HasPassengers => _waitingQueue.Count > 0;
 
     public Passenger GetNextPassenger()
     {
-        return WaitingQueue.Dequeue();
+        return _waitingQueue.Dequeue();
     }
 }
 
-// 4. Клас автобуса (Тепер логіка калькулятора знаходиться тут)
+// ===================================================================
+// 5. ІНКАПСУЛЯЦІЯ ТА ПОЛІМОРФІЗМ: Клас автобуса
+// ===================================================================
 public class Bus
 {
+    private readonly List<Passenger> _passengers = new();
+    private decimal _revenue;
+
     public int Capacity { get; }
-    public decimal BaseFare { get; } // Замість класу калькулятора зберігаємо базовий тариф
-    public List<Passenger> Passengers { get; } = new();
-    public decimal Revenue { get; private set; }
+    public decimal BaseFare { get; }
+    public decimal Revenue => _revenue;
+    
+    public IReadOnlyList<Passenger> Passengers => _passengers.AsReadOnly();
     public BusStop? CurrentStop { get; private set; } 
 
     public Bus(int capacity, decimal baseFare)
     {
-        Capacity = capacity;
-        BaseFare = baseFare;
-        Revenue = 0m;
-        CurrentStop = null;
+        Capacity = capacity > 0 ? capacity : 10;
+        BaseFare = baseFare >= 0 ? baseFare : 0m;
+        _revenue = 0m;
     }
 
-    // Внутрішній метод розрахунку тарифу (замінив клас FareCalculator)
     private Ticket IssueTicket(Passenger passenger)
     {
-        decimal finalPrice;
-        string tariffType;
-
-        switch (passenger.Category.Trim().ToLower())
-        {
-            case "студент":
-                finalPrice = BaseFare * 0.5m; 
-                tariffType = "Студентський (-50%)";
-                break;
-            case "пільговик":
-            case "пенсіонер":
-                finalPrice = 0m; 
-                tariffType = "Пільговий (безкоштовно)";
-                break;
-            default:
-                finalPrice = BaseFare;
-                tariffType = "Стандартний";
-                break;
-        }
-
-        return new Ticket(passenger.Name, finalPrice, tariffType);
+        decimal price = passenger.CalculateFare(BaseFare);
+        return new Ticket(passenger.Name, price, passenger.GetCategoryName());
     }
 
     public void ArriveAtStop(BusStop stop)
@@ -132,16 +169,16 @@ public class Bus
 
     public bool Board(Passenger passenger)
     {
-        if (Passengers.Count >= Capacity)
+        if (_passengers.Count >= Capacity)
         {
-            Console.WriteLine($"❌ {passenger.Name}: автобус переповнений! (Місць: {Passengers.Count}/{Capacity})");
+            Console.WriteLine($"❌ {passenger.Name}: автобус переповнений! (Місць: {_passengers.Count}/{Capacity})");
             return false;
         }
 
-        Ticket ticket = IssueTicket(passenger); // Використовуємо внутрішній метод
+        Ticket ticket = IssueTicket(passenger);
         passenger.Pay(ticket);
-        Passengers.Add(passenger);
-        Revenue += ticket.Price;
+        _passengers.Add(passenger);
+        _revenue += ticket.Price;
 
         Console.WriteLine($"✅ {passenger.Name}: посадка успішна.");
         ticket.DisplayInfo();
@@ -150,26 +187,26 @@ public class Bus
 
     public void Exit(string passengerName)
     {
-        var passenger = Passengers.FirstOrDefault(p => p.Name.Equals(passengerName, StringComparison.OrdinalIgnoreCase));
+        var passenger = _passengers.FirstOrDefault(p => p.Name.Equals(passengerName, StringComparison.OrdinalIgnoreCase));
         if (passenger == null)
         {
             Console.WriteLine($"⚠️ Пасажир '{passengerName}' не знайдений у салоні.");
             return;
         }
 
-        Passengers.Remove(passenger);
+        _passengers.Remove(passenger);
         Console.WriteLine($"🚪 {passenger.Name} вийшов(-ла) з автобуса.");
     }
 
     public void DisplayStatus()
     {
         Console.WriteLine("\n--- Стан автобуса ---");
-        Console.WriteLine($"Пасажирів у салоні: {Passengers.Count}/{Capacity}");
-        Console.WriteLine($"Загальна виручка: {Revenue:F2} грн");
-        if (Passengers.Count > 0)
+        Console.WriteLine($"Пасажирів у салоні: {_passengers.Count}/{Capacity}");
+        Console.WriteLine($"Загальна виручка: {_revenue:F2} грн");
+        if (_passengers.Count > 0)
         {
             Console.WriteLine("Пасажири на борту:");
-            foreach (var p in Passengers)
+            foreach (var p in _passengers)
             {
                 p.DisplayInfo();
             }
@@ -178,7 +215,9 @@ public class Bus
     }
 }
 
-// 5. Головний клас з інтерактивним консольним меню
+// ===================================================================
+// 6. ГОЛОВНИЙ КЛАС
+// ===================================================================
 public class Program
 {
     public static void Main()
@@ -186,7 +225,7 @@ public class Program
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Console.InputEncoding = System.Text.Encoding.UTF8;
 
-        Console.WriteLine("=== Налаштування автобуса ===");
+        Console.WriteLine("=== Симулятор Автобуса (Лабораторна №2: ООП) ===");
         
         int capacity = ReadInt("Введіть місткість автобуса: ");
         decimal baseFare = ReadDecimal("Введіть базову вартість квитка (грн): ");
@@ -196,7 +235,7 @@ public class Program
         while (true)
         {
             Console.WriteLine("\nВведіть назву наступної зупинки (або 'кінець' для завершення маршруту): ");
-            string stopName = Console.ReadLine()?.Trim();
+            string stopName = Console.ReadLine()?.Trim() ?? "";
             
             if (string.IsNullOrEmpty(stopName)) continue;
             if (stopName.ToLower() == "кінець") break;
@@ -207,8 +246,8 @@ public class Program
             // 1. Висадка пасажирів
             if (bus.Passengers.Count > 0)
             {
-                Console.WriteLine("\nХто хоче вийти на цій зупинці? (Введіть імена через кому, або просто натисніть Enter, якщо ніхто):");
-                string exitNames = Console.ReadLine()?.Trim();
+                Console.WriteLine("\nХто хоче вийти на цій зупинці? (Введіть імена через кому, або натисніть Enter):");
+                string exitNames = Console.ReadLine()?.Trim() ?? "";
                 
                 if (!string.IsNullOrEmpty(exitNames))
                 {
@@ -226,33 +265,58 @@ public class Program
             for (int i = 0; i < peopleWaiting; i++)
             {
                 Console.WriteLine($"\n--- Дані пасажира {i + 1} ---");
-                Console.Write("Ім'я: ");
-                string pName = Console.ReadLine()?.Trim() ?? "Невідомий";
-                
-                Console.Write("Категорія (Звичайний / Студент / Пільговик): ");
-                string pCategory = Console.ReadLine()?.Trim();
-                if (string.IsNullOrEmpty(pCategory)) pCategory = "Звичайний";
-
-                currentStop.AddPassenger(new Passenger(pName, pCategory));
+                // Зчитування об'єкта пасажира через вибір числа (1, 2 або 3)
+                Passenger passenger = ReadPassengerInput();
+                currentStop.AddPassenger(passenger);
             }
 
-            // Запускаємо їх в автобус
+            // Посадка пасажирів у автобус
             while (currentStop.HasPassengers)
             {
                 Passenger p = currentStop.GetNextPassenger();
                 bus.Board(p);
             }
 
-            // Показуємо статус після кожної зупинки
             bus.DisplayStatus();
         }
 
         Console.WriteLine("\n[Маршрут завершено] Автобус прибув у депо.");
         bus.DisplayStatus();
-        Console.ReadLine(); // Щоб консоль не закривалась відразу
+        Console.ReadLine();
     }
 
-    // Допоміжний метод для безпечного зчитування цілих чисел
+    // Зчитування імені та вибір категорії за числом з валідацією
+    private static Passenger ReadPassengerInput()
+    {
+        Console.Write("Ім'я пасажира: ");
+        string name = Console.ReadLine()?.Trim() ?? "";
+        if (string.IsNullOrEmpty(name)) name = "Невідомий";
+
+        while (true)
+        {
+            Console.WriteLine("Оберіть категорію:");
+            Console.WriteLine(" 1 - Звичайний");
+            Console.WriteLine(" 2 - Студент");
+            Console.WriteLine(" 3 - Пільговик / Пенсіонер");
+            Console.Write("Ваш вибір (1-3): ");
+
+            string input = Console.ReadLine()?.Trim() ?? "";
+
+            switch (input)
+            {
+                case "1":
+                    return new StandardPassenger(name);
+                case "2":
+                    return new StudentPassenger(name);
+                case "3":
+                    return new SeniorPassenger(name);
+                default:
+                    Console.WriteLine("❌ Некоректний вибір! Введіть число 1, 2 або 3.\n");
+                    break;
+            }
+        }
+    }
+
     private static int ReadInt(string message)
     {
         int result;
@@ -265,14 +329,13 @@ public class Program
         }
     }
 
-    // Допоміжний метод для безпечного зчитування дробових чисел (ціни)
     private static decimal ReadDecimal(string message)
     {
         decimal result;
         while (true)
         {
             Console.Write(message);
-            string input = Console.ReadLine()?.Replace('.', ','); // Підтримка і крапки, і коми
+            string input = Console.ReadLine()?.Replace('.', ',') ?? "0";
             if (decimal.TryParse(input, out result) && result >= 0)
                 return result;
             Console.WriteLine("Будь ласка, введіть коректну суму.");
